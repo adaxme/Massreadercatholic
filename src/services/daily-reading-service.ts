@@ -108,9 +108,11 @@ function formatReadingText(html: string): string {
 }
 
 // Gemini AI service integration
+// Updated to use Supabase Edge Function
 const GEMINI_API_KEYS = [
   'AIzaSyAH7AWzhP1pf_9StgZs89aTEv_vUeq3XxU',
-  'AIzaSyBNyXVjf3Dy0YC7kA3X3cxW5rA5L4M3TRQ'
+  'AIzaSyBNyXVjf3Dy0YC7kA3X3cxW5rA5L4M3TRQ',
+  'AIzaSyAG2x0duV-k1cnZqSdnsccRIzPeQyUtXIA'
 ];
 
 let currentKeyIndex = 0;
@@ -121,7 +123,39 @@ function getNextApiKey(): string {
   return key;
 }
 
-async function callGeminiWithRetry(prompt: string, maxRetries: number = 2): Promise<any> {
+async function callSupabaseEdgeFunction(prompt: string): Promise<string> {
+  try {
+    // Try to use Supabase Edge Function first
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    if (supabaseUrl && supabaseAnonKey) {
+      const response = await fetch(`${supabaseUrl}/functions/v1/generate-homily`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.content) {
+          return data.content;
+        }
+      }
+    }
+    
+    // Fallback to direct API calls if Edge Function fails
+    return await callGeminiWithRetry(prompt);
+  } catch (error) {
+    console.warn('Edge Function failed, falling back to direct API:', error);
+    return await callGeminiWithRetry(prompt);
+  }
+}
+
+async function callGeminiWithRetry(prompt: string, maxRetries: number = 3): Promise<string> {
   let lastError: Error | null = null;
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -223,7 +257,7 @@ Please provide the following in valid JSON format:
 Ensure all content is appropriate for Catholic liturgy and theologically sound.`;
 
   try {
-    const generatedText = await callGeminiWithRetry(prompt);
+    const generatedText = await callSupabaseEdgeFunction(prompt);
 
     // Clean the response by removing markdown code blocks and other formatting
     const cleanedText = generatedText
