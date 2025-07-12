@@ -108,6 +108,76 @@ function formatReadingText(html: string): string {
 }
 
 // Gemini AI service integration
+const GEMINI_API_KEYS = [
+  'AIzaSyAH7AWzhP1pf_9StgZs89aTEv_vUeq3XxU',
+  'AIzaSyBNyXVjf3Dy0YC7kA3X3cxW5rA5L4M3TRQ'
+];
+
+let currentKeyIndex = 0;
+
+function getNextApiKey(): string {
+  const key = GEMINI_API_KEYS[currentKeyIndex];
+  currentKeyIndex = (currentKeyIndex + 1) % GEMINI_API_KEYS.length;
+  return key;
+}
+
+async function callGeminiWithRetry(prompt: string, maxRetries: number = 2): Promise<any> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const apiKey = getNextApiKey();
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+    
+    try {
+      const response = await fetch(GEMINI_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.statusText} (Status: ${response.status})`);
+      }
+
+      const data = await response.json();
+      const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!generatedText) {
+        throw new Error('No content generated from Gemini API');
+      }
+
+      return generatedText;
+    } catch (error) {
+      console.warn(`API attempt ${attempt + 1} failed with key ending in ...${apiKey.slice(-4)}:`, error);
+      lastError = error as Error;
+      
+      // If this is a rate limit error or quota exceeded, try the next key immediately
+      if (error instanceof Error && (
+        error.message.includes('429') || 
+        error.message.includes('quota') || 
+        error.message.includes('rate limit')
+      )) {
+        continue;
+      }
+      
+      // For other errors, wait a bit before retrying
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  
+  throw lastError || new Error('All API key attempts failed');
+}
+
 async function generateContentWithGemini(input: {
   language: string;
   feastDay: string;
@@ -122,9 +192,6 @@ async function generateContentWithGemini(input: {
   gospelText: string;
   homily: string;
 }> {
-  const GEMINI_API_KEY = 'AIzaSyBNyXVjf3Dy0YC7kA3X3cxW5rA5L4M3TRQ';
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
-
   const prompt = `You are a Catholic theologian and scholar. Based on the following liturgical information, please provide a comprehensive response in ${input.language}:
 
 FEAST DAY: ${input.feastDay}
@@ -148,30 +215,7 @@ Please provide the following in valid JSON format:
 Ensure all content is appropriate for Catholic liturgy and theologically sound.`;
 
   try {
-    const response = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    if (!generatedText) {
-      throw new Error('No content generated from Gemini API');
-    }
+    const generatedText = await callGeminiWithRetry(prompt);
 
     // Extract JSON from the response (in case there's extra text)
     const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
