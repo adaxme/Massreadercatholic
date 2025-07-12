@@ -266,17 +266,46 @@ Ensure all content is appropriate for Catholic liturgy and theologically sound.`
       .replace(/^\s*[\r\n]+/gm, '') // Remove empty lines
       .trim();
 
-    // Extract JSON from the cleaned response - find first { and last }
-    const firstBraceIndex = cleanedText.indexOf('{');
-    const lastBraceIndex = cleanedText.lastIndexOf('}');
+    // More robust JSON extraction
+    let jsonString = '';
+    let parsedContent;
     
-    if (firstBraceIndex === -1 || lastBraceIndex === -1 || firstBraceIndex >= lastBraceIndex) {
-      throw new Error('Could not extract JSON from Gemini response');
+    // Try to find and extract valid JSON
+    const firstBraceIndex = cleanedText.indexOf('{');
+    if (firstBraceIndex === -1) {
+      throw new Error('No JSON object found in Gemini response');
     }
-
-    // Extract only the content between the first { and last } (inclusive)
-    const jsonString = cleanedText.substring(firstBraceIndex, lastBraceIndex + 1).trim();
-    const parsedContent = JSON.parse(jsonString);
+    
+    // Find the matching closing brace by counting braces
+    let braceCount = 0;
+    let endIndex = -1;
+    
+    for (let i = firstBraceIndex; i < cleanedText.length; i++) {
+      if (cleanedText[i] === '{') {
+        braceCount++;
+      } else if (cleanedText[i] === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          endIndex = i;
+          break;
+        }
+      }
+    }
+    
+    if (endIndex === -1) {
+      throw new Error('Could not find complete JSON object in Gemini response');
+    }
+    
+    jsonString = cleanedText.substring(firstBraceIndex, endIndex + 1).trim();
+    
+    try {
+      parsedContent = JSON.parse(jsonString);
+    } catch (parseError) {
+      console.error('JSON parsing failed. Raw response:', generatedText);
+      console.error('Cleaned text:', cleanedText);
+      console.error('Extracted JSON string:', jsonString);
+      throw new Error(`Failed to parse JSON from Gemini response: ${parseError instanceof Error ? parseError.message : 'Unknown parsing error'}`);
+    }
     
     return {
       feast: parsedContent.feast || input.feastDay,
@@ -291,19 +320,8 @@ Ensure all content is appropriate for Catholic liturgy and theologically sound.`
     };
   } catch (error) {
     console.error('Gemini API error:', error);
-    
-    // Fallback to original content if AI fails
-    return {
-      feast: input.feastDay,
-      saintOfTheDay: {
-        name: "Saint of the Day",
-        biography: "A holy person dedicated to serving God and others through prayer, sacrifice, and good works."
-      },
-      firstReadingText: input.firstReadingText,
-      responsorialPsalmText: input.psalmText,
-      gospelText: input.gospelText,
-      homily: "Today's readings invite us to contemplate the profound mystery of God's love manifested in our daily lives. Through prayer and reflection on these sacred texts, we are called to deeper union with Christ and service to our neighbors."
-    };
+    // Re-throw the error to allow proper error handling in the UI
+    throw error;
   }
 }
 
