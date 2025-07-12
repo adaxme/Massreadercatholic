@@ -9,21 +9,16 @@ const DailyReadingInputSchema = z.object({
 export type DailyReadingInput = z.infer<typeof DailyReadingInputSchema>;
 
 // Data structure from Universalis API
-const UniversalisReadingSchema = z.object({
-  source: z.string(),
-  text: z.string(),
-});
-const UniversalisDataSchema = z.object({
-  date: z.string(),
-  day: z.string(),
-  Mass_R1: UniversalisReadingSchema,
-  Mass_Ps: UniversalisReadingSchema,
-  Mass_R2: UniversalisReadingSchema.optional(),
-  Mass_GA: UniversalisReadingSchema,
-  Mass_G: UniversalisReadingSchema,
-  copyright: z.object({ text: z.string() }),
-});
-type UniversalisData = z.infer<typeof UniversalisDataSchema>;
+interface ReadingData {
+  date: string;
+  day: string;
+  Mass_R1: { source: string; text: string };
+  Mass_Ps: { source: string; text: string };
+  Mass_R2?: { source: string; text: string };
+  Mass_GA: { source: string; text: string };
+  Mass_G: { source: string; text: string };
+  copyright: { text: string };
+}
 
 // Final output structure for the UI
 const DailyReadingOutputSchema = z.object({
@@ -49,31 +44,38 @@ const DailyReadingOutputSchema = z.object({
 });
 export type DailyReadingOutput = z.infer<typeof DailyReadingOutputSchema>;
 
-// Function to fetch and parse data from Universalis
-async function fetchReadingsFromUniversalis(): Promise<UniversalisData> {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  const formattedDate = `${year}${month}${day}`;
-  const url = `https://universalis.com/United.States/${formattedDate}/jsonpmass.js?callback=universalisCallback`;
+// Function to fetch readings using JSONP
+export async function fetchReadings(): Promise<ReadingData> {
+  return new Promise<ReadingData>((resolve, reject) => {
+    const script = document.createElement('script');
+    const uniqueCallbackName = 'universalisCallback';
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch readings from Universalis: ${response.statusText}`);
-  }
-  let text = await response.text();
-  
-  // Strip JSONP callback wrapper
-  const startIndex = text.indexOf('(');
-  const endIndex = text.lastIndexOf(')');
-  if (startIndex === -1 || endIndex === -1) {
-    throw new Error('Invalid JSONP response format from Universalis');
-  }
-  text = text.substring(startIndex + 1, endIndex);
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const formattedDate = `${year}${month}${day}`;
+    const url = `https://universalis.com/United.States/${formattedDate}/jsonpmass.js`;
 
-  const data = JSON.parse(text);
-  return UniversalisDataSchema.parse(data);
+    script.src = `${url}?callback=${uniqueCallbackName}`;
+
+    // Define the callback function with the type `ReadingData`
+    (window as any)[uniqueCallbackName] = (data: ReadingData) => {
+      resolve(data);
+      // Clean up: remove the script and callback
+      delete (window as any)[uniqueCallbackName];
+      document.body.removeChild(script);
+    };
+
+    // Handle JSONP script loading errors
+    script.onerror = () => {
+      reject(new Error(`JSONP request to ${url} failed`));
+      delete (window as any)[uniqueCallbackName];
+      document.body.removeChild(script);
+    };
+
+    document.body.appendChild(script);
+  });
 }
 
 /**
@@ -105,8 +107,8 @@ function formatReadingText(html: string): string {
   );
 }
 
-// Mock AI service for demonstration - in a real app you'd connect to your AI service
-async function generateContentWithAI(input: {
+// Gemini AI service integration
+async function generateContentWithGemini(input: {
   language: string;
   feastDay: string;
   firstReadingText: string;
@@ -120,44 +122,109 @@ async function generateContentWithAI(input: {
   gospelText: string;
   homily: string;
 }> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  const GEMINI_API_KEY = 'AIzaSyBNyXVjf3Dy0YC7kA3X3cxW5rA5L4M3TRQ';
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
 
-  // For demo purposes, return mock data based on language
-  const isEnglish = input.language === 'English';
-  
-  return {
-    feast: isEnglish ? input.feastDay : `${input.feastDay} (${input.language})`,
-    saintOfTheDay: {
-      name: isEnglish ? "Saint Thomas Aquinas" : `Santo Tomás de Aquino (${input.language})`,
-      biography: isEnglish 
-        ? "Thomas Aquinas (1225-1274) was an Italian Dominican friar and priest who was an influential philosopher and theologian. He is known for his synthesis of Aristotelian philosophy with Christian theology, particularly in his masterwork 'Summa Theologica'. He is considered one of the greatest theologians in the history of the Catholic Church and was canonized in 1323."
-        : `Thomas Aquinas (1225-1274) fue un fraile dominico y sacerdote italiano que fue un filósofo y teólogo influyente. Es conocido por su síntesis de la filosofía aristotélica con la teología cristiana, particularmente en su obra maestra 'Summa Theologica'. Es considerado uno de los más grandes teólogos en la historia de la Iglesia Católica y fue canonizado en 1323. (${input.language})`
-    },
-    firstReadingText: isEnglish ? input.firstReadingText : `${input.firstReadingText}\n\n[Translated to ${input.language}]`,
-    responsorialPsalmText: isEnglish ? input.psalmText : `${input.psalmText}\n\n[Translated to ${input.language}]`,
-    gospelText: isEnglish ? input.gospelText : `${input.gospelText}\n\n[Translated to ${input.language}]`,
-    homily: isEnglish 
-      ? "Today's readings invite us to contemplate the profound mystery of God's love manifested in our daily lives. The first reading reminds us that we are called to be instruments of divine grace, while the Gospel challenges us to live authentically as disciples of Christ. In our modern world, filled with distractions and competing voices, we must return to the fundamental truth that our identity is rooted in our relationship with the Divine. This relationship is not merely intellectual but deeply mystical, calling us to a transformation that touches every aspect of our being. As we reflect on these sacred texts, we are invited to move beyond surface understanding to a deeper contemplation of the divine mysteries that surround us each day."
-      : `Las lecturas de hoy nos invitan a contemplar el profundo misterio del amor de Dios manifestado en nuestras vidas diarias. La primera lectura nos recuerda que estamos llamados a ser instrumentos de la gracia divina, mientras que el Evangelio nos desafía a vivir auténticamente como discípulos de Cristo. En nuestro mundo moderno, lleno de distracciones y voces competidoras, debemos volver a la verdad fundamental de que nuestra identidad está arraigada en nuestra relación con lo Divino. (${input.language})`
-  };
+  const prompt = `You are a Catholic theologian and scholar. Based on the following liturgical information, please provide a comprehensive response in ${input.language}:
+
+FEAST DAY: ${input.feastDay}
+FIRST READING: ${input.firstReadingText}
+PSALM: ${input.psalmText}
+GOSPEL: ${input.gospelText}
+
+Please provide the following in valid JSON format:
+{
+  "feast": "The feast day name in ${input.language}",
+  "saintOfTheDay": {
+    "name": "Name of a relevant saint for today",
+    "biography": "A brief, inspiring biography of the saint (2-3 sentences)"
+  },
+  "firstReadingText": "The first reading text translated to ${input.language} if needed",
+  "responsorialPsalmText": "The psalm text translated to ${input.language} if needed", 
+  "gospelText": "The gospel text translated to ${input.language} if needed",
+  "homily": "A theologically rich, mystical homily based on the readings (3-4 paragraphs)"
+}
+
+Ensure all content is appropriate for Catholic liturgy and theologically sound.`;
+
+  try {
+    const response = await fetch(GEMINI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!generatedText) {
+      throw new Error('No content generated from Gemini API');
+    }
+
+    // Extract JSON from the response (in case there's extra text)
+    const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error('Could not extract JSON from Gemini response');
+    }
+
+    const parsedContent = JSON.parse(jsonMatch[0]);
+    
+    return {
+      feast: parsedContent.feast || input.feastDay,
+      saintOfTheDay: {
+        name: parsedContent.saintOfTheDay?.name || "Saint of the Day",
+        biography: parsedContent.saintOfTheDay?.biography || "A holy person dedicated to God's service."
+      },
+      firstReadingText: parsedContent.firstReadingText || input.firstReadingText,
+      responsorialPsalmText: parsedContent.responsorialPsalmText || input.psalmText,
+      gospelText: parsedContent.gospelText || input.gospelText,
+      homily: parsedContent.homily || "Today's readings invite us to deeper contemplation of God's love and mercy."
+    };
+  } catch (error) {
+    console.error('Gemini API error:', error);
+    
+    // Fallback to original content if AI fails
+    return {
+      feast: input.feastDay,
+      saintOfTheDay: {
+        name: "Saint of the Day",
+        biography: "A holy person dedicated to serving God and others through prayer, sacrifice, and good works."
+      },
+      firstReadingText: input.firstReadingText,
+      responsorialPsalmText: input.psalmText,
+      gospelText: input.gospelText,
+      homily: "Today's readings invite us to contemplate the profound mystery of God's love manifested in our daily lives. Through prayer and reflection on these sacred texts, we are called to deeper union with Christ and service to our neighbors."
+    };
+  }
 }
 
 export async function getDailyReading(input: DailyReadingInput): Promise<DailyReadingOutput> {
-  // 1. Fetch the exact readings from Universalis
-  const universalisData = await fetchReadingsFromUniversalis();
+  // 1. Fetch the exact readings using JSONP
+  const readingsData = await fetchReadings();
 
   // 2. Prepare the input for the AI
   const promptInput = {
     language: input.language,
-    feastDay: stripHtml(universalisData.day),
-    firstReadingText: formatReadingText(universalisData.Mass_R1.text),
-    psalmText: formatReadingText(universalisData.Mass_Ps.text),
-    gospelText: formatReadingText(universalisData.Mass_G.text),
+    feastDay: stripHtml(readingsData.day),
+    firstReadingText: formatReadingText(readingsData.Mass_R1.text),
+    psalmText: formatReadingText(readingsData.Mass_Ps.text),
+    gospelText: formatReadingText(readingsData.Mass_G.text),
   };
   
-  // 3. Call the AI to translate and generate content
-  const aiContent = await generateContentWithAI(promptInput);
+  // 3. Call Gemini AI to translate and generate content
+  const aiContent = await generateContentWithGemini(promptInput);
   
   // 4. Combine the fetched references and the AI-generated content into the final response
   const today = new Date();
@@ -171,15 +238,15 @@ export async function getDailyReading(input: DailyReadingInput): Promise<DailyRe
     date: formattedDate,
     feast: aiContent.feast,
     firstReading: {
-      reference: stripHtml(universalisData.Mass_R1.source),
+      reference: stripHtml(readingsData.Mass_R1.source),
       text: aiContent.firstReadingText,
     },
     responsorialPsalm: {
-      reference: stripHtml(universalisData.Mass_Ps.source),
+      reference: stripHtml(readingsData.Mass_Ps.source),
       text: aiContent.responsorialPsalmText,
     },
     gospel: {
-      reference: stripHtml(universalisData.Mass_G.source),
+      reference: stripHtml(readingsData.Mass_G.source),
       text: aiContent.gospelText,
     },
     saintOfTheDay: aiContent.saintOfTheDay,
