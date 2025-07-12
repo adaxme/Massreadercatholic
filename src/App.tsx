@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BookOpen, Church, Languages, UserCircle } from 'lucide-react';
 import { DailyReadingOutput, getDailyReading } from './services/daily-reading-service';
+import { useAdMob } from './hooks/use-admob';
+import { App as CapacitorApp } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
+import { Capacitor } from '@capacitor/core';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './components/ui/accordion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -14,6 +18,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [readingData, setReadingData] = useState<DailyReadingOutput | null>(null);
   const { toast } = useToast();
+  const { isInitialized: adMobInitialized, showBanner, showInterstitial } = useAdMob();
 
   const handleGenerate = useCallback(async (lang: string) => {
     setLoading(true);
@@ -33,9 +38,41 @@ export default function App() {
     }
   }, [toast]);
 
+  // Initialize Capacitor features
+  useEffect(() => {
+    const initializeCapacitor = async () => {
+      if (Capacitor.isNativePlatform()) {
+        // Set status bar style
+        await StatusBar.setStyle({ style: Style.Dark });
+        
+        // Handle app state changes
+        CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+          console.log('App state changed. Is active?', isActive);
+        });
+      }
+    };
+
+    initializeCapacitor();
+  }, []);
+
+  // Show banner ad when content loads
+  useEffect(() => {
+    if (adMobInitialized && readingData && !loading) {
+      showBanner();
+    }
+  }, [adMobInitialized, readingData, loading, showBanner]);
+
   useEffect(() => {
     handleGenerate(language);
   }, [language, handleGenerate]);
+
+  const handleLanguageChange = async (newLanguage: string) => {
+    // Show interstitial ad occasionally when changing language
+    if (adMobInitialized && Math.random() < 0.3) {
+      await showInterstitial();
+    }
+    setLanguage(newLanguage);
+  };
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -46,7 +83,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4">
           <Languages className="h-5 w-5 text-muted-foreground" />
-          <Select value={language} onValueChange={setLanguage}>
+          <Select value={language} onValueChange={handleLanguageChange}>
             <SelectTrigger className="w-[120px]">
               <SelectValue placeholder="Language" />
             </SelectTrigger>
@@ -60,7 +97,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 space-y-8 p-6 md:p-8">
+      <main className="flex-1 space-y-8 p-6 md:p-8 pb-20">
         {loading ? (
           <LoadingSkeleton />
         ) : (
