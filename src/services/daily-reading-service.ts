@@ -266,14 +266,16 @@ Ensure all content is appropriate for Catholic liturgy and theologically sound.`
       .replace(/^\s*[\r\n]+/gm, '') // Remove empty lines
       .trim();
 
-    // Extract JSON from the cleaned response
-    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // Extract JSON from the cleaned response - find first { and last }
+    const firstBraceIndex = cleanedText.indexOf('{');
+    const lastBraceIndex = cleanedText.lastIndexOf('}');
+    
+    if (firstBraceIndex === -1 || lastBraceIndex === -1 || firstBraceIndex >= lastBraceIndex) {
       throw new Error('Could not extract JSON from Gemini response');
     }
 
-    // Further clean the extracted JSON to remove any trailing characters
-    const jsonString = jsonMatch[0].trim();
+    // Extract only the content between the first { and last } (inclusive)
+    const jsonString = cleanedText.substring(firstBraceIndex, lastBraceIndex + 1).trim();
     const parsedContent = JSON.parse(jsonString);
     
     return {
