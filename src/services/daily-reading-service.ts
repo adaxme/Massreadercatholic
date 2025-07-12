@@ -225,13 +225,22 @@ Ensure all content is appropriate for Catholic liturgy and theologically sound.`
   try {
     const generatedText = await callGeminiWithRetry(prompt);
 
-    // Extract JSON from the response (in case there's extra text)
-    const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
+    // Clean the response by removing markdown code blocks and other formatting
+    const cleanedText = generatedText
+      .replace(/```json\s*/gi, '')  // Remove ```json
+      .replace(/```\s*/g, '')       // Remove closing ```
+      .replace(/^\s*[\r\n]+/gm, '') // Remove empty lines
+      .trim();
+
+    // Extract JSON from the cleaned response
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error('Could not extract JSON from Gemini response');
     }
 
-    const parsedContent = JSON.parse(jsonMatch[0]);
+    // Further clean the extracted JSON to remove any trailing characters
+    const jsonString = jsonMatch[0].trim();
+    const parsedContent = JSON.parse(jsonString);
     
     return {
       feast: parsedContent.feast || input.feastDay,
