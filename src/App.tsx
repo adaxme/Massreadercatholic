@@ -1,16 +1,15 @@
-'use client';
-
 import { useCallback, useEffect, useState } from 'react';
 import { BookOpen, Church, Languages, UserCircle } from 'lucide-react';
-import { DailyReadingOutput, getDailyReading } from '@/ai/flows/get-daily-reading-flow';
+import { DailyReadingOutput, getDailyReading } from './services/daily-reading-service';
 
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './components/ui/accordion';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
+import { Skeleton } from './components/ui/skeleton';
+import { Toaster } from './components/ui/toaster';
+import { useToast } from './hooks/use-toast';
 
-export default function Home() {
+export default function App() {
   const [language, setLanguage] = useState('English');
   const [loading, setLoading] = useState(true);
   const [readingData, setReadingData] = useState<DailyReadingOutput | null>(null);
@@ -78,6 +77,7 @@ export default function Home() {
           )
         )}
       </main>
+      <Toaster />
     </div>
   );
 }
