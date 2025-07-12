@@ -126,7 +126,7 @@ async function callGeminiWithRetry(prompt: string, maxRetries: number = 2): Prom
   
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const apiKey = getNextApiKey();
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
     try {
       const response = await fetch(GEMINI_URL, {
@@ -144,7 +144,15 @@ async function callGeminiWithRetry(prompt: string, maxRetries: number = 2): Prom
       });
 
       if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.statusText} (Status: ${response.status})`);
+        const errorText = await response.text();
+        if (response.status === 404) {
+          throw new Error(`Gemini API 404 Error: The API endpoint was not found. Please ensure:
+1. The Generative Language API is enabled in your Google Cloud Console
+2. Your API keys are valid and active
+3. Billing is enabled for your Google Cloud project
+4. If using API key restrictions, add your domain to allowed referrers`);
+        }
+        throw new Error(`Gemini API error: ${response.statusText} (Status: ${response.status}) - ${errorText}`);
       }
 
       const data = await response.json();
