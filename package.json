@@ -4,9 +4,9 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "android": "react-native run-android",
-    "ios": "react-native run-ios",
-    "start": "react-native start",
+    "android": "bash -c 'react-native run-android'",
+    "ios": "bash -c 'react-native run-ios'",
+    "start": "bash -c 'react-native start --reset-cache'",
     "test": "jest",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
